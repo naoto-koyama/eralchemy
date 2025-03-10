@@ -53,7 +53,7 @@ class Column(Drawable):
     """Represents a Column in the intermediaty syntax."""
 
     RE = re.compile(
-        r'(?P<primary>\*?)(?P<name>\w+(\s*\w+)*)\s*(\{label:\s*"(?P<label>[^"]+)"\})?',
+        r'(?P<primary>\*?)(?P<n>\w+(\s*\w+)*)\s*(\{label:\s*"(?P<label>[^"]+)"\})?',
     )
 
     @staticmethod
@@ -65,18 +65,20 @@ class Column(Drawable):
             is_null="*" not in match.group("primary"),
         )
 
-    def __init__(self, name: str, type=None, is_key: bool = False, is_null=None):
+    def __init__(self, name: str, type=None, is_key: bool = False, is_null=None, comment=None):
         """Initialize the Column class.
 
         :param name: (str) Name of the column
-        :param type:
-        :param is_key:
-        :param is_null:
+        :param type: Type of the column
+        :param is_key: Whether the column is a primary key
+        :param is_null: Whether the column can be null
+        :param comment: Comment of the column
         :return:
         """
         self.name = name
         self.type = type
         self.is_key = is_key
+        self.comment = comment
         if is_null is None:
             self.is_null = not is_key
         else:
@@ -112,17 +114,12 @@ class Column(Drawable):
         return f" {type_str} {name} {'PK' if self.is_key else ''}"
 
     def to_dot(self) -> str:
-        base = ROW_TAGS.format(
-            ' ALIGN="LEFT" {port}',
-            "{key_opening}{col_name}{key_closing} {type}{null}",
-        )
-        return base.format(
-            port=f'PORT="{self.name}"' if self.name else "",
-            key_opening="<u>" if self.is_key else "",
-            key_closing="</u>" if self.is_key else "",
-            col_name=FONT_TAGS.format(self.name),
-            type=(FONT_TAGS.format(" [{}]").format(self.type) if self.type is not None else ""),
-            null=" NOT NULL" if not self.is_null else "",
+        """Return a representation of the column suitable for the DOT language."""
+        # 日本語フォントを指定
+        fontname = 'FACE="IPAexGothic"'
+        return ROW_TAGS.format(
+            ' ALIGN="LEFT"',
+            f'{FONT_TAGS.format(fontname, self.key_symbol + self.name)} {FONT_TAGS.format(fontname, self.type if self.type else "")}',
         )
 
 
@@ -211,24 +208,30 @@ class Relation(Drawable):
         right_col = sanitize_mermaid(self.right_table, is_er=True)
         return f"{left_col} {left}--{right} {right_col} : has"
 
-    def graphviz_cardinalities(self, card) -> str:
-        if card == "":
-            return ""
-        return f"label=<<FONT>{self.cardinalities[card]}</FONT>>"
-
     def to_dot(self) -> str:
         if self.right_cardinality == self.left_cardinality == "":
             return ""
-        cards = []
-        if self.left_cardinality != "":
-            cards.append("tail" + self.graphviz_cardinalities(self.left_cardinality))
-        if self.right_cardinality != "":
-            cards.append("head" + self.graphviz_cardinalities(self.right_cardinality))
+        
+        left_card = self.cardinalities[self.left_cardinality] if self.left_cardinality != "" else ""
+        right_card = self.cardinalities[self.right_cardinality] if self.right_cardinality != "" else ""
+        
         left_col = f':"{self.left_column}"' if self.left_column else ""
         right_col = f':"{self.right_column}"' if self.right_column else ""
-        return (
-            f'"{self.left_table}"{left_col} -- "{self.right_table}"{right_col} [{",".join(cards)}];'
-        )
+        
+        attrs = []
+        if left_card:
+            attrs.append(f'taillabel="{left_card}"')
+        if right_card:
+            attrs.append(f'headlabel="{right_card}"')
+        
+        attrs.append('arrowhead="none"')
+        attrs.append('arrowtail="none"')
+        attrs.append('fontname="IPAexGothic"')
+        attrs.append('labelfontname="IPAexGothic"')
+        attrs.append('headlabelfontname="IPAexGothic"')
+        attrs.append('taillabelfontname="IPAexGothic"')
+        
+        return f'"{self.left_table}"{left_col} -- "{self.right_table}"{right_col} [{", ".join(attrs)}];'
 
     def __eq__(self, other: object) -> bool:
         if super().__eq__(other):
@@ -249,11 +252,13 @@ class Relation(Drawable):
 class Table(Drawable):
     """Represents a Table in the intermediaty syntax."""
 
-    RE = re.compile(r"\[(?P<name>[^]]+)\]")
+    RE = re.compile(r"\[(?P<n>[^]]+)\]")
 
-    def __init__(self, name: str, columns: list[Column]) -> None:
+    def __init__(self, name: str, columns: list[Column], comment=None) -> None:
+        """Initialize the Table class."""
         self.name = name
         self.columns = columns
+        self.comment = comment
 
     @staticmethod
     def make_from_match(match: re.Match) -> Table:
@@ -282,7 +287,11 @@ class Table(Drawable):
 
     @property
     def header_dot(self) -> str:
-        return ROW_TAGS.format("", f'<B><FONT POINT-SIZE="16">{self.name}</FONT></B>')
+        fontname = 'FACE="IPAexGothic"'
+        return ROW_TAGS.format(
+            ' BGCOLOR="#DDDDDD"',
+            f'<B>{FONT_TAGS.format(fontname, self.name)}</B>',
+        )
 
     def to_dot(self) -> str:
         body = "".join(c.to_dot() for c in self.columns)

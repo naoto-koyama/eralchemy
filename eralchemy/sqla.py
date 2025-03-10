@@ -124,10 +124,65 @@ def name_for_scalar_relationship(
 def database_to_intermediary(
     database_uri: str,
     schema: str | None = None,
+    use_comments: bool = False,
 ) -> tuple[list[Table], list[Relation]]:
     """Introspect from the database (given the database_uri) to create the intermediary representation."""
     Base = automap_base()
     engine = create_engine(database_uri)
+    
+    # 追加: コメント情報を取得する辞書
+    column_comments = {}
+    table_comments = {}
+    
+    # コメント情報を取得する（PostgreSQL用）
+    if use_comments:
+        try:
+            with engine.connect() as connection:
+                # テーブルコメントを取得
+                table_comment_query = """
+                SELECT table_name, obj_description(
+                    (quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass, 'pg_class'
+                ) as comment
+                FROM information_schema.tables
+                WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+                AND obj_description(
+                    (quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass, 'pg_class'
+                ) IS NOT NULL
+                """
+                if schema is not None:
+                    schemas = schema.split(",")
+                    schema_conditions = " OR ".join([f"table_schema = '{s.strip()}'" for s in schemas])
+                    table_comment_query += f" AND ({schema_conditions})"
+                
+                table_comment_result = connection.execute(sa.text(table_comment_query))
+                for row in table_comment_result:
+                    table_comments[row[0]] = row[1]
+                
+                # カラムコメントを取得
+                column_comment_query = """
+                SELECT table_name, column_name, col_description(
+                    (quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass,
+                    ordinal_position
+                ) as comment
+                FROM information_schema.columns
+                WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
+                AND col_description(
+                    (quote_ident(table_schema) || '.' || quote_ident(table_name))::regclass,
+                    ordinal_position
+                ) IS NOT NULL
+                """
+                if schema is not None:
+                    schemas = schema.split(",")
+                    schema_conditions = " OR ".join([f"table_schema = '{s.strip()}'" for s in schemas])
+                    column_comment_query += f" AND ({schema_conditions})"
+                
+                column_comment_result = connection.execute(sa.text(column_comment_query))
+                for row in column_comment_result:
+                    key = f"{row[0]}.{row[1]}"
+                    column_comments[key] = row[2]
+        except Exception as e:
+            print(f"コメント情報の取得中にエラーが発生しました: {e}")
+    
     if schema is not None:
         schemas = schema.split(",")
         for schema in schemas:
@@ -145,4 +200,22 @@ def database_to_intermediary(
             name_for_scalar_relationship=name_for_scalar_relationship,
         )
 
-    return declarative_to_intermediary(Base)
+    tables, relationships = declarative_to_intermediary(Base)
+    
+    # 追加: コメント情報をテーブルとカラムに適用
+    if use_comments:
+        for table in tables:
+            # テーブルコメントを適用（現在は使用していないが将来的に使用する可能性あり）
+            if table.name in table_comments:
+                table.comment = table_comments[table.name]
+            
+            # カラムコメントを適用
+            for column in table.columns:
+                key = f"{table.name}.{column.name}"
+                if key in column_comments:
+                    # コメントをカラムの型として設定（use_commentsモードの場合）
+                    column.comment = column_comments[key]
+                    if use_comments:
+                        column.type = column_comments[key]
+    
+    return tables, relationships

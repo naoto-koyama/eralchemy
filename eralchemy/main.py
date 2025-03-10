@@ -63,6 +63,7 @@ def cli(args=None) -> None:
         exclude_tables=args.exclude_tables,
         exclude_columns=args.exclude_columns,
         schema=args.s,
+        use_comments=args.use_comments,
     )
 
 
@@ -98,7 +99,16 @@ def get_argparser() -> argparse.ArgumentParser:
         nargs="+",
         help="Name of columns to be displayed alone (for all tables).",
     )
-    parser.add_argument("-v", help="Prints version number.", action="store_true")
+    parser.add_argument(
+        "--use-comments",
+        action="store_true",
+        help="Use database comments instead of column names in the diagram.",
+    )
+    parser.add_argument(
+        "-v",
+        action="store_true",
+        help="Print version information.",
+    )
     return parser
 
 
@@ -190,18 +200,63 @@ def _intermediary_to_mermaid_er(tables, relationships):
 
 
 def _intermediary_to_dot(tables, relationships, title=""):
-    """Returns the dot source representing the database in a string."""
-    t = "\n".join(t.to_dot() for t in tables)
-    r = "\n".join(r.to_dot() for r in relationships)
+    """Returns a dot string representing the database schema."""
+    if not GRAPHVIZ_AVAILABLE:
+        raise Exception("neither graphviz or pygraphviz are available. Install either library!")
+    if USE_PYGRAPHVIZ:
+        graph = AGraph(
+            name="ERD",
+            directed=True,
+            strict=False,
+            rankdir="LR",
+            fontname="IPAexGothic",  # 日本語フォントを指定
+            fontsize="10.0",
+        )
+        if title:
+            graph.graph_attr["label"] = title
+            graph.graph_attr["labelloc"] = "t"
+            graph.graph_attr["labeljust"] = "l"
+            graph.graph_attr["fontname"] = "IPAexGothic"  # タイトルにも日本語フォントを指定
+            graph.graph_attr["fontsize"] = "18.0"
 
-    graph_config = (
-        f"""{DOT_GRAPH_BEGINNING}
-         label="{title}"
-         labelloc=t\n"""
-        if title
-        else DOT_GRAPH_BEGINNING
-    )
-    return f"{graph_config}\n{t}\n{r}\n}}"
+        for table in tables:
+            graph.add_node(
+                table.name,
+                shape="none",
+                margin="0",
+                fontname="IPAexGothic",  # テーブル名にも日本語フォントを指定
+                label=f"<<TABLE BORDER='0' CELLBORDER='1' CELLSPACING='0'>{table.header_dot}{''.join(c.to_dot() for c in table.columns)}</TABLE>>",
+            )
+
+        for rel in relationships:
+            left_card = rel.cardinalities[rel.left_cardinality] if rel.left_cardinality != "" else ""
+            right_card = rel.cardinalities[rel.right_cardinality] if rel.right_cardinality != "" else ""
+            
+            graph.add_edge(
+                rel.right_table,
+                rel.left_table,
+                taillabel=left_card,
+                headlabel=right_card,
+                fontname="IPAexGothic",
+                labelfontname="IPAexGothic",
+                headlabelfontname="IPAexGothic",
+                taillabelfontname="IPAexGothic",
+                arrowhead="none",
+                arrowtail="none",
+            )
+        return graph.string()
+    else:
+        dot_body = [DOT_GRAPH_BEGINNING]
+        if title:
+            dot_body.append(f'  labelloc="t";\n  labeljust="l";\n  fontname="IPAexGothic";\n  fontsize="18.0";\n  label="{title}";')
+        for table in tables:
+            dot_body.append(f'  "{table.name}" [shape=none, margin=0, fontname="IPAexGothic", label=<{table.to_dot()}>];')
+        for rel in relationships:
+            dot_body.append(
+                f'  "{rel.right_table}" -> "{rel.left_table}" [label="{rel.graphviz_cardinalities(rel.left_cardinality)}", headlabel="{rel.graphviz_cardinalities(rel.right_cardinality)}", fontname="IPAexGothic", arrowhead=none, arrowtail=none];'
+            )
+        dot_body.append("}")
+        return "\n".join(dot_body)
 
 
 # Routes from the class name to the function transforming this class in
@@ -235,7 +290,7 @@ switch_output_mode = {
 }
 
 
-def all_to_intermediary(filename_or_input, schema=None):
+def all_to_intermediary(filename_or_input, schema=None, use_comments=False):
     """Dispatch the filename_or_input to the different function to produce the intermediary syntax.
 
     All the supported classes names are in `switch_input_class_to_method`.
@@ -264,7 +319,7 @@ def all_to_intermediary(filename_or_input, schema=None):
     # try to read DB URI might raise ArgumentError.
     try:
         make_url(filename_or_input)
-        return database_to_intermediary(filename_or_input, schema=schema)
+        return database_to_intermediary(filename_or_input, schema=schema, use_comments=use_comments)
     except ArgumentError as e:
         raise ValueError(f"Cannot process filename_or_input {input_class_name}: {e}")
 
@@ -359,6 +414,7 @@ def render_er(
     exclude_columns=None,
     schema=None,
     title=None,
+    use_comments=False,
 ):
     """Transform the metadata into a representation.
 
@@ -383,9 +439,10 @@ def render_er(
     :param exclude_columns: lst of str, field names to exclude, None means exclude nothing
     :param schema: name of the schema
     :param title: title of the graph, only for .er, .dot, .png, .jpg outputs.
+    :param use_comments: bool, use database comments instead of column names
     """
     try:
-        tables, relationships = all_to_intermediary(input, schema=schema)
+        tables, relationships = all_to_intermediary(input, schema=schema, use_comments=use_comments)
         tables, relationships = filter_resources(
             tables,
             relationships,
@@ -397,7 +454,7 @@ def render_er(
         intermediary_to_output = get_output_mode(output, mode)
         return intermediary_to_output(tables, relationships, output, title)
     except ImportError as e:
-        module_name = e.message.split()[-1]
+        module_name = str(e).split()[-1]
         print(f'Please install {module_name} using "pip install {module_name}".')
     except (FileNotFoundError, ValueError) as e:
         print(f"{e}")
