@@ -4,159 +4,165 @@
 [![GitHub Actions Workflow Status](https://img.shields.io/github/actions/workflow/status/eralchemy/eralchemy/unit.yaml?logo=github&logoColor=white)](https://github.com/eralchemy/eralchemy/actions/workflows/unit.yaml)
 [![Codecov](https://img.shields.io/codecov/c/github/eralchemy/eralchemy?logo=codecov&logoColor=white&token=gSfKRZVvAh)](https://app.codecov.io/gh/eralchemy/eralchemy/tree/main)
 
-# Entity relation diagrams generator
+# ERAlchemy - DB コメント表示機能付き ER 図生成ツール
 
-eralchemy generates Entity Relation (ER) diagram (like the one below) from databases or from SQLAlchemy models.
+このリポジトリは、PostgreSQL データベースから ER 図を生成し、DB コメントを表示する機能を追加した eralchemy のフォークです。
 
-## Example
+## インストール方法
 
-![Example for a graph](https://raw.githubusercontent.com/eralchemy/eralchemy/main/docs/_static/forum.svg "Example for a simple Forum")
+### 基本インストール
 
-## Quick Start
+```bash
+# GitHubからリポジトリをクローン
+git clone https://github.com/naoto-koyama/eralchemy.git
+cd eralchemy
 
-### Install
+# インストール
+pip install -e .
 
-To install eralchemy, just do:
+# グラフ生成に必要なライブラリをインストール
+pip install pygraphviz
+# または
+pip install graphviz
+```
 
-    $ pip install eralchemy
+### 日本語フォントのインストール
 
-### Graph library flavors
+日本語の DB コメントを正しく表示するには、日本語フォントが必要です。
 
-To create Pictures and PDFs, eralchemy relies on either graphviz or pygraphviz.
+Debian/Ubuntu の場合:
 
-You can use either
+```bash
+apt install fonts-ipafont fonts-ipaexfont locales
+# ロケールの設定
+sed -i -e 's/# ja_JP.UTF-8 UTF-8/ja_JP.UTF-8 UTF-8/' /etc/locale.gen && locale-gen
+```
 
-    $ pip install eralchemy[graphviz]
+macOS の場合:
 
-or
+```bash
+brew install font-ipa
+```
 
-    $ pip install eralchemy[pygraphviz]
+## 使用方法
 
-to retrieve the correct dependencies.
-The `graphviz` library is the default if both are installed.
+### コマンドラインから使用する
 
-`eralchemy` requires [GraphViz](http://www.graphviz.org/download) to generate the graphs and Python. Both are available for Windows, Mac and Linux.
+#### 通常の ER 図を生成する場合
 
-For Debian based systems, run:
+```bash
+eralchemy -i "postgresql://ユーザー名:パスワード@ホスト:ポート/データベース名" -o erd_normal.pdf
+```
 
-    $ apt install graphviz libgraphviz-dev
+#### DB コメントを表示した ER 図を生成する場合
 
-before installing eralchemy.
+```bash
+eralchemy -i "postgresql://ユーザー名:パスワード@ホスト:ポート/データベース名" -o erd_comments.pdf --use-comments
+```
 
-### Install using conda
+#### 特定のスキーマのみを対象にする場合
 
-There is also a packaged version in conda-forge, which directly installs the dependencies:
+```bash
+eralchemy -i "postgresql://ユーザー名:パスワード@ホスト:ポート/データベース名" -o erd.pdf --use-comments -s "スキーマ名"
+```
 
-    $ conda install -c conda-forge eralchemy
+#### 特定のテーブルを除外する場合
 
-### Usage from Command Line
+```bash
+eralchemy -i "postgresql://ユーザー名:パスワード@ホスト:ポート/データベース名" -o erd.pdf --use-comments --exclude-tables テーブル1 テーブル2
+```
 
-#### From a database
-
-    $ eralchemy -i sqlite:///relative/path/to/db.db -o erd_from_sqlite.pdf
-
-The database is specified as a [SQLAlchemy](https://docs.sqlalchemy.org/en/20/core/engines.html#database-urls)
-database url.
-
-#### From a markdown file.
-
-    $ curl 'https://raw.githubusercontent.com/eralchemy/eralchemy/main/example/forum.er' > markdown_file.er
-    $ eralchemy -i 'markdown_file.er' -o erd_from_markdown_file.pdf
-
-#### From a Postgresql DB to a markdown file excluding tables named `temp` and `audit`
-
-    $ eralchemy -i 'postgresql+psycopg2://username:password@hostname:5432/databasename' -o filtered.er --exclude-tables temp audit
-
-#### From a Postgresql DB to a markdown file excluding columns named `created_at` and `updated_at` from all tables
-
-    $ eralchemy -i 'postgresql+psycopg2://username:password@hostname:5432/databasename' -o filtered.er --exclude-columns created_at updated_at
-
-#### From a Postgresql DB to a markdown file for the schemas `schema1` and `schema2`
-
-    $ eralchemy -i 'postgresql+psycopg2://username:password@hostname:5432/databasename' -s "schema1, schema2"
-
-#### Specify Output Mode
-
-    $ eralchemy -i 'markdown_file.er' -o erd_from_markdown_file.md -m mermaid_er
-
-### Usage from Python
+### Python から使用する
 
 ```python
 from eralchemy import render_er
-## Draw from SQLAlchemy base
-render_er(Base, 'erd_from_sqlalchemy.png')
 
-## Draw from database
-render_er("sqlite:///relative/path/to/db.db", 'erd_from_sqlite.png')
+# 通常のER図を生成
+render_er("postgresql://ユーザー名:パスワード@ホスト:ポート/データベース名", 'erd_normal.png')
+
+# DBコメントを表示したER図を生成
+render_er("postgresql://ユーザー名:パスワード@ホスト:ポート/データベース名", 'erd_comments.png', use_comments=True)
 ```
 
-## Architecture
+## Docker を使用する方法
 
-```mermaid
+このリポジトリには、Docker を使用して ER 図を生成するためのスクリプトが含まれています。
 
-graph LR
-    subgraph Inputs
-        A[Markdown representation]
-        B[SQLAlchemy Schema]
-        C[Existing database]
-        D[Other ORM ?]
-    end
+### 準備
 
-    E[Intermediary representation]
+```bash
+# リポジトリをクローン
+git clone https://github.com/naoto-koyama/eralchemy.git
+cd eralchemy
 
-    subgraph Outputs
-        F[Markdown representation]
-        G[Graphviz code]
-        H[Drawing]
-    end
-
-    A --> E
-    B --> E
-    C --> E
-    D --> E
-    E --> F
-    E --> G
-    E --> H
-
+# 出力ディレクトリを作成
+mkdir -p output
 ```
 
-Thanks to it's modular architecture, it can be connected to other ORMs/ODMs/OGMs/O\*Ms.
+### Docker Compose を使用する場合
 
-## Contribute
+```bash
+# PostgreSQLコンテナを起動
+docker-compose up -d db
 
-Every feedback is welcome on the [GitHub issues](https://github.com/eralchemy/eralchemy/issues).
+# eralchemyコンテナをビルドして実行
+docker build -t eralchemy .
 
-### Development
+# 通常のER図を生成
+docker run --network eralchemy_default \
+  -e POSTGRES_HOST=db \
+  -e DATABASE_USER=root \
+  -e DATABASE_PASSWORD=postgres \
+  -e DATABASE_NAME=postgres \
+  -v $(pwd)/output:/app/output \
+  eralchemy ./generate_erd.sh
 
-Install the development dependencies using
+# DBコメントを表示したER図を生成
+docker run --network eralchemy_default \
+  -e POSTGRES_HOST=db \
+  -e DATABASE_USER=root \
+  -e DATABASE_PASSWORD=postgres \
+  -e DATABASE_NAME=postgres \
+  -v $(pwd)/output:/app/output \
+  eralchemy ./generate_erd.sh --use-comments
+```
 
-    $ pip install -e .[ci,dev]
+### 既存の Docker コンテナに組み込む場合
 
-Make sure to run the pre-commit to fix formatting
+既存の Docker コンテナに組み込む場合は、以下のファイルを追加してください。
 
-    $ pre-commit run --all
+1. `generate_erd.sh`スクリプトをコンテナ内に配置
+2. 必要なパッケージをインストール:
 
-All tested PR are welcome.
+   ```
+   apt-get update && apt-get install -y \
+       postgresql-client \
+       graphviz \
+       gcc \
+       python3-dev \
+       libpq-dev \
+       libgraphviz-dev \
+       pkg-config \
+       fonts-ipafont \
+       fonts-ipaexfont \
+       locales
 
-## Running tests
+   # ロケールの設定
+   sed -i -e 's/# ja_JP.UTF-8 UTF-8/ja_JP.UTF-8 UTF-8/' /etc/locale.gen && locale-gen
+   ```
 
-This project uses the pytest test suite.
-To run the tests, use : `$ pytest` or `$ tox`.
+3. eralchemy をインストール:
+   ```
+   pip install git+https://github.com/naoto-koyama/eralchemy.git
+   pip install psycopg2 pygraphviz
+   ```
 
-Some tests require having a local PostgreSQL database with a schema named test in a database
-named test all owned by a user named eralchemy with a password of eralchemy.
-If docker compose is available, one can use `docker compose up -d` for this purpose.
-You can deselect the tests which require a PostgreSQL database using:
+## 注意事項
 
-    $ pytest -m "not external_db"
+- DB コメントを表示するには、PostgreSQL データベースにコメントが設定されている必要があります
+- 日本語フォントが正しくインストールされていることを確認してください
+- 生成された ER 図は、指定した出力ディレクトリに保存されます
 
-## Publishing a release
+## ライセンス
 
-    $ rm -r dist && python -m build && python3 -m twine upload --repository pypi dist/*
-
-## Notes
-
-ERAlchemy was inspired by [erd](https://github.com/BurntSushi/erd), though it is able to render the ER diagram directly
-from the database and not just only from the `ER` markup language.
-
-Released under an Apache License 2.0
+Apache License 2.0
