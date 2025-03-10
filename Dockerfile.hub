@@ -1,0 +1,82 @@
+FROM python:3.9-slim
+
+# 必要なパッケージをインストール
+RUN apt-get update && apt-get install -y \
+    graphviz \
+    graphviz-dev \
+    libpq-dev \
+    postgresql-client \
+    gcc \
+    python3-dev \
+    libgraphviz-dev \
+    pkg-config \
+    fonts-ipafont \
+    fonts-ipaexfont \
+    locales \
+    git \
+    && rm -rf /var/lib/apt/lists/*
+
+# ロケールを設定
+RUN sed -i -e 's/# ja_JP.UTF-8 UTF-8/ja_JP.UTF-8 UTF-8/' /etc/locale.gen && \
+    locale-gen
+ENV LANG=ja_JP.UTF-8
+ENV LC_ALL=ja_JP.UTF-8
+
+# 修正版eralchemyをインストール
+RUN pip install git+https://github.com/naoto-koyama/eralchemy.git
+RUN pip install psycopg2 pygraphviz
+
+# 作業ディレクトリを設定
+WORKDIR /app
+
+# エントリポイントスクリプトを作成
+RUN echo '#!/bin/bash\n\
+\n\
+# コマンドライン引数を解析\n\
+USE_COMMENTS=false\n\
+OUTPUT_FILE="erd.pdf"\n\
+CONNECTION_STRING=""\n\
+\n\
+while [[ $# -gt 0 ]]; do\n\
+  case $1 in\n\
+    --use-comments)\n\
+      USE_COMMENTS=true\n\
+      shift\n\
+      ;;\n\
+    -o|--output)\n\
+      OUTPUT_FILE="$2"\n\
+      shift 2\n\
+      ;;\n\
+    -i|--input)\n\
+      CONNECTION_STRING="$2"\n\
+      shift 2\n\
+      ;;\n\
+    *)\n\
+      echo "Unknown option: $1"\n\
+      echo "Usage: $0 -i \"connection_string\" -o output_file.pdf [--use-comments]"\n\
+      exit 1\n\
+      ;;\n\
+  esac\n\
+done\n\
+\n\
+# 接続文字列が指定されていない場合はエラー\n\
+if [ -z "$CONNECTION_STRING" ]; then\n\
+  echo "Error: Connection string is required"\n\
+  echo "Usage: $0 -i \"connection_string\" -o output_file.pdf [--use-comments]"\n\
+  exit 1\n\
+fi\n\
+\n\
+# コマンドライン引数を設定\n\
+CMD_ARGS=""\n\
+if [ "$USE_COMMENTS" = true ]; then\n\
+  CMD_ARGS="--use-comments"\n\
+fi\n\
+\n\
+# ERDを生成\n\
+echo "ER図を生成中..."\n\
+eralchemy -i "$CONNECTION_STRING" -o "$OUTPUT_FILE" $CMD_ARGS\n\
+echo "ER図が生成されました: $OUTPUT_FILE"\n\
+' > /app/entrypoint.sh && chmod +x /app/entrypoint.sh
+
+# エントリポイントを設定
+ENTRYPOINT ["/app/entrypoint.sh"] 
