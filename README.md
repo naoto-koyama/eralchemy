@@ -8,6 +8,40 @@
 
 このリポジトリは、PostgreSQL データベースから ER 図を生成し、DB コメントを表示する機能を追加した eralchemy のフォークです。
 
+## Docker Hub を使用した簡単な実行方法
+
+Docker Hub にプッシュされたイメージを使用すると、1 行のコマンドで ER 図を生成できます。
+
+### 使用方法
+
+```bash
+# 通常のER図を生成
+docker run --rm -v $(pwd):/app naotokoyama324/eralchemy -i "postgresql://ユーザー名:パスワード@ホスト:ポート/データベース名" -o erd.pdf
+
+# DBコメント付きのER図を生成
+docker run --rm -v $(pwd):/app naotokoyama324/eralchemy -i "postgresql://ユーザー名:パスワード@ホスト:ポート/データベース名" -o erd_comments.pdf --use-comments
+```
+
+### 注意事項
+
+- ホスト名には、Docker コンテナからアクセス可能なホスト名または IP アドレスを指定してください。
+  - ローカルホストの場合は、Mac では `host.docker.internal`、Linux では `172.17.0.1` などを使用します。
+- 出力ファイルは、カレントディレクトリに生成されます。
+- DB コメントを表示するには、PostgreSQL データベースにコメントが設定されている必要があります。
+
+### 例
+
+```bash
+# MacOSの場合
+docker run --rm -v $(pwd):/app naotokoyama324/eralchemy -i "postgresql://postgres:postgres@host.docker.internal:5432/postgres" -o erd.pdf
+
+# Linuxの場合
+docker run --rm -v $(pwd):/app naotokoyama324/eralchemy -i "postgresql://postgres:postgres@172.17.0.1:5432/postgres" -o erd.pdf
+
+# DBコメント付きのER図を生成
+docker run --rm -v $(pwd):/app naotokoyama324/eralchemy -i "postgresql://postgres:postgres@host.docker.internal:5432/postgres" -o erd_comments.pdf --use-comments
+```
+
 ## インストール方法
 
 ### 基本インストール
