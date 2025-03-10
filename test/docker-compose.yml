@@ -1,0 +1,27 @@
+version: "3"
+
+services:
+  db:
+    image: postgres:13
+    environment:
+      POSTGRES_USER: root
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    volumes:
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql
+    ports:
+      - "5433:5432"
+
+  eralchemy:
+    build:
+      context: ..
+      dockerfile: test/Dockerfile
+    environment:
+      POSTGRES_HOST: db
+      DATABASE_USER: root
+      DATABASE_PASSWORD: postgres
+      DATABASE_NAME: postgres
+    volumes:
+      - ./output:/app/output
+    depends_on:
+      - db
